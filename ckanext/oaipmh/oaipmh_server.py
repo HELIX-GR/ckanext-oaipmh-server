@@ -13,10 +13,42 @@ from sqlalchemy import between
 from ckan.lib.helpers import url_for
 from ckan.logic import get_action
 from ckan.model import Package, Session, Group
+from ckan.common import config
 import utils
 
 log = logging.getLogger(__name__)
 
+class About(object):
+    def __init__(self, element, baseURL, identifier, datestamp, metadataNamespace, harvestDate):
+        self._element = element
+        # force identifier to be a string, it might be 
+        # an lxml.etree._ElementStringResult...
+        try:
+            self._identifier = str(identifier)
+        except UnicodeEncodeError:
+            self._identifier = unicode(identifier)
+        self._datestamp = datestamp
+        self._baseURL = baseURL
+        self._metadataNamespace = metadataNamespace
+        self._harvestDate = harvestDate
+
+    def element(self):
+        return self._element
+
+    def identifier(self):
+        return self._identifier
+
+    def datestamp(self):
+        return self._datestamp
+
+    def baseURL(self):
+        return self._baseURL
+
+    def metadataNamespace(self):
+        return self._metadataNamespace
+
+    def harvestDate(self):
+        return self._harvestDate
 
 class CKANServer(ResumptionOAIPMH):
     '''A OAI-PMH implementation class for CKAN.
@@ -162,7 +194,7 @@ class CKANServer(ResumptionOAIPMH):
         base_url, identifier = self._provinfo(extras['MetaDataAccess'][0])
         return (common.Header('', dataset.name, dataset.metadata_modified, set_spec, False),
                 common.Metadata('', metadata),
-                common.About('', base_url, identifier, '', '',dataset.metadata_modified))
+                About('', base_url, identifier, '', '',dataset.metadata_modified))
 
     def _record_for_dataset_datacite(self, dataset, set_spec):
         '''Show a tuple of a header and metadata for this dataset.
@@ -170,15 +202,16 @@ class CKANServer(ResumptionOAIPMH):
         package = get_action('package_show')({}, {'id': dataset.id})
         # Loops through extras -table:
         extras = {}
-        for item in package['extras']:
-            for key, value in item.iteritems():
-                key = item['key']   # extras table is constructed as key: language, value: English
-                value = item['value']  # instead of language : English, that is why it is looped here
-                if key in ['spatial']:
-                    extras.update({key: value})
-                else:
-                    values = value.split(";")
-                    extras.update({key: values})
+        if 'extras' in package:
+            for item in package['extras']:
+                for key, value in item.iteritems():
+                    key = item['key']   # extras table is constructed as key: language, value: English
+                    value = item['value']  # instead of language : English, that is why it is looped here
+                    if key in ['spatial']:
+                        extras.update({key: value})
+                    else:
+                        values = value.split(";")
+                        extras.update({key: values})
 
         temporal_begin = extras.get('TemporalCoverage:BeginDate')
         temporal_end = extras.get('TemporalCoverage:EndDate')
@@ -190,6 +223,8 @@ class CKANServer(ResumptionOAIPMH):
 
         # identifiers = self._set_id(package, extras)
         subj = [tag.get('display_name') for tag in package['tags']] if package.get('tags', None) else None
+        if subj is not None and 'closed_tag' in package:
+            subj.extend(package.get('closed_tag'))
         if subj is not None and 'Discipline' in extras:
             subj.extend(extras['Discipline'])
 
@@ -217,22 +252,32 @@ class CKANServer(ResumptionOAIPMH):
                 point = '{x},{y}'.format(x=coords[0][0], y=coords[0][1])
 
         meta = {
-            'DOI': extras['DOI'] if 'DOI' in extras else None,
+            'DOI': package['datacite.public_doi'] if 'datacite.public_doi' in package else None,
             'PID': extras['PID'] if 'PID' in extras else None,
             'version': extras['Version'] if 'Version' in extras else None,
             'source': package.get('url', None),
-            'relatedIdentifier': extras['RelatedIdentifier'] if 'RelatedIdentifier' in extras else None,
-            'creator': authors if authors else None,
-            'publisher': extras['Publisher'] if 'Publisher' in extras else None,
+            'relatedIdentifier': package['datacite.related_publication'] if 'datacite.related_publication' in package else None,
+            'creator': {
+                'creator_name' :package['datacite.creator.creator_name'] if 'datacite.creator.creator_name' in package else None,
+                'creator_affiliation':package['datacite.creator.creator_affiliation'] if 'datacite.creator.creator_affiliation' in package else None
+            },
+            'creator_organization': package['datacite.creator.creator_affiliation'] if 'datacite.creator.creator_affiliation' in package else None,
+            'publisher': package['organization'].get('title'),
             'publicationYear': extras['PublicationYear'] if 'PublicationYear' in extras else None,
             'publicationTimestamp': extras['PublicationTimestamp'] if 'PublicationTimestamp' in extras else None,
+            'metadataAccess': extras['MetaDataAccess'] if 'MetaDataAccess' in extras else None,
             'resourceType': extras['ResourceType'] if 'ResourceType' in extras else None,
-            'language': extras['Language'] if 'Language' in extras else None,
-            'titles': package.get('title', None) or package.get('name'),
+            'language': package['datacite.languagecode'] if 'datacite.languagecode' in package else None,
+            'titles': [package.get('title', None) or package.get('name'),package.get('title_optional', None)],
             'contributor': extras['Contributor'] if 'Contributor' in extras else None,
-            'descriptions': self._get_json_content(package.get('notes')) if package.get('notes', None) else None,
+            'descriptions': [self._get_json_content(package.get('notes')) if package.get('notes', None) else None,
+                self._get_json_content(package.get('notes_optional')) if package.get('notes_optional', None) else None],
             'subjects': subj,
-            'rights': extras['Rights'] if 'Rights' in extras else None,
+            'rights': {
+                'title': package['license_title'] if 'license_title' in package else None,
+                'uri':  package['license_url'] if 'license_url' in package else None,
+                'identifier': package['license_id'] if 'license_id' in package else None
+            },
             'openAccess': extras['OpenAccess'] if 'OpenAccess' in extras else None,
             'size': extras['Size'] if 'Size' in extras else None,
             'format': extras['Format'] if 'Format' in extras else None,
@@ -249,10 +294,12 @@ class CKANServer(ResumptionOAIPMH):
                 metadata[str(key)] = [value]
             else:
                 metadata[str(key)] = value
-        base_url, identifier = self._provinfo(extras['MetaDataAccess'][0])
+        base_url = config.get('ckan.site_url')
+        identifier = package.get("identifier")
         return (common.Header('', dataset.name, dataset.metadata_modified, set_spec, False),
                 common.Metadata('', metadata),
-                common.About('', base_url, identifier, '', '',dataset.metadata_modified))
+                About('', base_url, identifier, '', '',dataset.metadata_modified)
+                )
 
 
     def _record_for_dataset(self, dataset, set_spec):
@@ -261,12 +308,13 @@ class CKANServer(ResumptionOAIPMH):
         package = get_action('package_show')({}, {'id': dataset.id})
         # Loops through extras -table:
         extras = {}
-        for item in package['extras']:
-            for key, value in item.iteritems():
-                key = item['key']   # extras table is constructed as key: language, value: English
-                value = item['value']  # instead of language : English, that is why it is looped here
-                values = value.split(";")
-                extras.update({key: values})
+        if 'extras' in package:
+            for item in package['extras']:
+                for key, value in item.iteritems():
+                    key = item['key']   # extras table is constructed as key: language, value: English
+                    value = item['value']  # instead of language : English, that is why it is looped here
+                    values = value.split(";")
+                    extras.update({key: values})
 
         coverage = []
         temporal_begin = package.get('temporal_coverage_begin', '')
@@ -320,10 +368,13 @@ class CKANServer(ResumptionOAIPMH):
                 metadata[str(key)] = [value]
             else:
                 metadata[str(key)] = value
-        base_url, identifier = self._provinfo(extras['MetaDataAccess'][0])
+        #base_url, identifier = self._provinfo(extras['MetaDataAccess'][0])
+        base_url = config.get('ckan.site_url')
+        identifier = package.get("identifier")
         return (common.Header('', dataset.name, dataset.metadata_modified, set_spec, False),
                 common.Metadata('', metadata),
-                common.About('', base_url, identifier, '', '',dataset.metadata_modified))
+                About('', base_url, identifier, '', '',dataset.metadata_modified)
+                )
 
     def _provinfo(self, metadata_access):
         from urlparse import urlparse

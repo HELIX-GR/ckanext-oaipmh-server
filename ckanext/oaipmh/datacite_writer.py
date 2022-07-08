@@ -60,13 +60,15 @@ def datacite_writer(element, metadata):
                 continue
             if k == 'titles':
                 e_titles = SubElement(e_r, nsdatacite(k))
-                e_title_primary = SubElement(e_titles, nsdatacite('title'))
-                e_title_primary.text = v[0]
+                for title in v:
+                    e_title_primary = SubElement(e_titles, nsdatacite('title'))
+                    e_title_primary.text = title
                 continue
             if k == 'descriptions':
                 e_descs = SubElement(e_r, nsdatacite(k))
-                e_desc = SubElement(e_descs, nsdatacite('description'), descriptionType="Abstract")
-                e_desc.text = v[0]
+                for desc in v:
+                    e_desc = SubElement(e_descs, nsdatacite('description'), descriptionType="Abstract")
+                    e_desc.text = desc[0]
                 continue
             if k == 'resourceType':
                 e_resourceType = SubElement(e_r, nsdatacite(k), resourceTypeGeneral="Other")
@@ -80,10 +82,12 @@ def datacite_writer(element, metadata):
                 continue
             if k == 'creator':
                 e_creators = SubElement(e_r, nsdatacite('creators'))
-                for creatorName in v:
+                for creator in v:
                     e_creator = SubElement(e_creators, nsdatacite(k))
                     e_creatorName = SubElement(e_creator, nsdatacite('creatorName'))
-                    e_creatorName.text = creatorName
+                    e_creatorName.text = creator['creator_name']
+                    e_affiliation = SubElement(e_creator, nsdatacite('affiliation'))
+                    e_affiliation.text = creator['creator_affiliation']
                 continue
             if k == 'contributor':
                 e_contributors = SubElement(e_r, nsdatacite('contributors'))
@@ -146,7 +150,11 @@ def datacite_writer(element, metadata):
                 e_rightslist = SubElement(e_r, nsdatacite('rightsList'))
                 for rights in v:
                     e_rights = SubElement(e_rightslist, nsdatacite(k))  # rightsURI="info:eu-repo/semantics/openAccess")
-                    e_rights.text = rights
+                    e_rights.text = rights['title']
+                    e_rights_uri = SubElement(e_rightslist, nsdatacite('rightsUri'))
+                    e_rights_uri.text = rights['uri']
+                    e_rights_identifier = SubElement(e_rightslist, nsdatacite('rightsIdentifier'))
+                    e_rights_identifier.text = rights['identifier']
                 continue
             if k == 'fundingReference':
                 e_funds = SubElement(e_r, nsdatacite('fundingReferences'))
@@ -181,9 +189,9 @@ def datacite_writer(element, metadata):
                 continue
             if k == 'relatedIdentifier':
                 e_rel_ids = SubElement(e_r, nsdatacite('relatedIdentifiers'))
-                for url in v:
-                    e_rel_id = SubElement(e_rel_ids, nsdatacite('relatedIdentifier'), relatedIdentifierType='URL')
-                    e_rel_id.text = url
+                for doi in v:
+                    e_rel_id = SubElement(e_rel_ids, nsdatacite('relatedIdentifier'), relatedIdentifierType='DOI')
+                    e_rel_id.text = doi
                 continue
 
 
