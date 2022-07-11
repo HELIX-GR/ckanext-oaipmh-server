@@ -67,8 +67,9 @@ def datacite_writer(element, metadata):
             if k == 'descriptions':
                 e_descs = SubElement(e_r, nsdatacite(k))
                 for desc in v:
-                    e_desc = SubElement(e_descs, nsdatacite('description'), descriptionType="Abstract")
-                    e_desc.text = desc[0]
+                    if desc is not None:
+                        e_desc = SubElement(e_descs, nsdatacite('description'), descriptionType="Abstract")
+                        e_desc.text = desc[0]
                 continue
             if k == 'resourceType':
                 e_resourceType = SubElement(e_r, nsdatacite(k), resourceTypeGeneral="Other")
@@ -100,7 +101,7 @@ def datacite_writer(element, metadata):
                 e_publisher = SubElement(e_r, nsdatacite('publisher'))
                 e_publisher.text = v[0]
                 continue
-            if k == 'language':
+            if k == 'language' and v is not None:
                 e_language = SubElement(e_r, nsdatacite('language'))
                 e_language.text = v[0]
                 continue
