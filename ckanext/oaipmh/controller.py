@@ -39,7 +39,7 @@ class OAIPMHController(BaseController):
                                              resumption_batch_size=500)
                 parms = request.params.mixed()
                 res = serv.handleRequest(parms)
-                response.headers['content-type'] = 'text/xml; charset=utf-8'
+                response.headers['content-type'] = 'text/xml;charset=UTF-8'
                 return res
         else:
             return render('ckanext/oaipmh/oaipmh.html')
